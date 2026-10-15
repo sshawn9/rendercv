@@ -4,7 +4,7 @@ import pathlib
 import pydantic
 import pydantic_core
 
-from rendercv import __description__
+from rendercv import __description__, __schema_url__
 
 from .models.rendercv_model import RenderCVModel
 
@@ -30,9 +30,7 @@ def generate_json_schema() -> dict:
             json_schema = super().generate(schema, mode=mode)
             json_schema["title"] = "RenderCV"
             json_schema["description"] = __description__
-            json_schema["$id"] = (
-                "https://raw.githubusercontent.com/rendercv/rendercv/main/schema.json"
-            )
+            json_schema["$id"] = __schema_url__
             json_schema["$schema"] = "http://json-schema.org/draft-07/schema#"
             return json_schema
 

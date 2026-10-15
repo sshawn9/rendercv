@@ -2,6 +2,7 @@ import pathlib
 from datetime import date as Date
 
 import pydantic
+import pytest
 
 from rendercv.schema.models.validation_context import (
     ValidationContext,
@@ -52,3 +53,21 @@ class TestValidationContext:
         expected_date = Date.today()
         assert model.path_field == "None"
         assert model.date_field == expected_date.isoformat()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2100-01-01", Date(2100, 1, 1)),
+        ("today", None),
+        ("not-a-date", None),
+    ],
+)
+def test_yaml_date_context_is_parsed_or_falls_back_for_settings_validation(
+    value, expected
+):
+    model = DummyModel.model_validate(
+        {"name": "test", "path_field": "dummy", "date_field": "dummy"},
+        context={"context": ValidationContext(current_date=value)},
+    )
+    assert model.date_field == (expected or Date.today()).isoformat()

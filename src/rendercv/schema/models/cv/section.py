@@ -1,4 +1,5 @@
 from collections import Counter
+from collections.abc import Mapping
 from functools import reduce
 from operator import or_
 from typing import Annotated, Any, Literal, get_args
@@ -16,11 +17,12 @@ from .entries.numbered import NumberedEntry
 from .entries.one_line import OneLineEntry
 from .entries.publication import PublicationEntry
 from .entries.reversed_numbered import ReversedNumberedEntry
+from .entries.text import TextEntry, TextEntryInput
 
 ########################################################################################
 # Below needs to be updated when new entry types are added.
 
-# str is an entry type (TextEntry) but not a model, so it's not included in EntryModel.
+# Structured entry types; text has both string and object input forms.
 type EntryModel = (
     OneLineEntry
     | NormalEntry
@@ -31,7 +33,7 @@ type EntryModel = (
     | NumberedEntry
     | ReversedNumberedEntry
 )
-type Entry = EntryModel | str
+type Entry = EntryModel | str | TextEntry
 ########################################################################################
 # __value__ is standard PEP 695 type alias access (not a private API):
 available_entry_models: tuple[type[EntryModel], ...] = get_args(EntryModel.__value__)
@@ -40,7 +42,7 @@ available_entry_type_names: tuple[str, ...] = tuple(
 )
 # reduce() constructs a union type at runtime that type checkers cannot verify
 # statically, so the ty:ignore below is unavoidable:
-type ListOfEntries = list[str] | reduce(  # ty: ignore[invalid-type-form]
+type ListOfEntries = list[TextEntryInput] | reduce(  # ty: ignore[invalid-type-form]
     or_, [list[entry_type] for entry_type in available_entry_models]
 )
 
@@ -113,23 +115,27 @@ def create_section_models(
         model_name = "SectionWith" + entry_type.__name__.replace("Entry", "Entries")
         entry_type_name = entry_type.__name__
 
+    entry_list = list[TextEntryInput] if entry_type is str else list[entry_type]
     return pydantic.create_model(
         model_name,
         entry_type=(Literal[entry_type_name], ...),  # ty: ignore[invalid-type-form]
-        entries=(list[entry_type], ...),  # ty: ignore[invalid-type-form]
+        entries=(entry_list, ...),
         __base__=BaseRenderCVSection,
     )
 
 
-section_models: dict[type[EntryModel] | type[str], type[BaseRenderCVSection]] = {
+section_models: dict[
+    type[EntryModel] | type[str] | type[TextEntry], type[BaseRenderCVSection]
+] = {
     entry_type: create_section_models(entry_type)
     for entry_type in available_entry_models
 }
 section_models[str] = create_section_models(str)
+section_models[TextEntry] = section_models[str]
 
 
 def get_entry_type_name_and_section_model(
-    entry: dict[str, str | list[str]] | str | EntryModel | None,
+    entry: Any,
 ) -> tuple[str, type[BaseRenderCVSection]]:
     """Infer entry type from entry data and return corresponding section model.
 
@@ -156,6 +162,10 @@ def get_entry_type_name_and_section_model(
                 section_model = section_models[EntryType]
                 break
 
+        # Existing structured types take priority over a custom field named text.
+        if section_model is None and "text" in entry:
+            entry_type_name, section_model = "TextEntry", section_models[str]
+
         if section_model is None or entry_type_name is None:
             raise pydantic_core.PydanticCustomError(
                 CustomPydanticErrorTypes.other.value,
@@ -173,15 +183,21 @@ def get_entry_type_name_and_section_model(
             "The entry cannot be None.",
         )
 
-    else:
+    elif type(entry) in section_models:
         # Then the entry is already initialized with a data model:
         entry_type_name = entry.__class__.__name__
         section_model = section_models[entry.__class__]
 
+    else:
+        raise pydantic_core.PydanticCustomError(
+            CustomPydanticErrorTypes.other.value,
+            "Each entry must be text or a mapping of fields.",
+        )
+
     return entry_type_name, section_model
 
 
-def validate_section(sections_input: Any) -> Any:
+def validate_entries(sections_input: Any, info: pydantic.ValidationInfo | None) -> Any:
     """Validate section entries with automatic type detection and error reporting.
 
     Why:
@@ -226,7 +242,9 @@ def validate_section(sections_input: Any) -> Any:
         }
 
         try:
-            section_object = section_type.model_validate(section)
+            section_object = section_type.model_validate(
+                section, context=info.context if info is not None else None
+            )
             sections_input = section_object.entries
         except pydantic.ValidationError as e:
             new_error = pydantic_core.PydanticCustomError(
@@ -247,12 +265,44 @@ def validate_section(sections_input: Any) -> Any:
     return sections_input
 
 
-# Create a custom type named Section, which is a list of entries. The entries can be any
-# of the available entry types. The section is validated with the `validate_section`
-# function.
-type Section = Annotated[
+type SectionEntries = Annotated[
     pydantic.json_schema.SkipJsonSchema[Any] | ListOfEntries,
-    pydantic.BeforeValidator(validate_section),
+    pydantic.BeforeValidator(validate_entries),
+]
+
+
+class SectionWithVisibility(BaseModelWithoutExtraKeys):
+    """Optional section wrapper. Legacy lists retain their original structure."""
+
+    hidden: bool = pydantic.Field(
+        default=False,
+        description="Hide the entire section without changing its entries' visibility.",
+        exclude_if=lambda value: value is False,
+    )
+    entries: SectionEntries
+
+
+def validate_section(
+    sections_input: Any, info: pydantic.ValidationInfo | None = None
+) -> Any:
+    if isinstance(sections_input, dict | SectionWithVisibility):
+        return SectionWithVisibility.model_validate(
+            sections_input, context=info.context if info is not None else None
+        )
+    return validate_entries(sections_input, info)
+
+
+def _validate_section_with_context(value: Any, info: pydantic.ValidationInfo) -> Any:
+    # Pydantic counts required parameters when detecting context-aware validators.
+    # Keep that signature here while preserving validate_section(value) for callers.
+    return validate_section(value, info)
+
+
+# Dispatch on input shape so invalid wrappers report their real fields rather
+# than unrelated errors from every list/section union branch.
+type Section = Annotated[
+    pydantic.json_schema.SkipJsonSchema[Any] | ListOfEntries | SectionWithVisibility,
+    pydantic.BeforeValidator(_validate_section_with_context),
 ]
 
 
@@ -320,15 +370,19 @@ def dictionary_key_to_proper_section_title(key: str) -> str:
     )
 
 
+hidden_adapter = pydantic.TypeAdapter[bool](bool)
+
+
 def get_rendercv_sections(
-    sections: dict[str, list[Any]] | None,
+    sections: Mapping[str, list[Any] | SectionWithVisibility | dict[str, Any]] | None,
 ) -> list[BaseRenderCVSection]:
     """Transform user's section dictionary into list of typed section objects.
 
     Why:
-        YAML sections are dicts for user convenience (e.g., `{education: [...]}`).
-        Template rendering requires list of section objects with title and
-        entry_type fields. This conversion happens after validation.
+        Template rendering uses validated sections, but Python callers may also
+        supply raw dictionaries. Preserve those entries' representation while
+        applying the same visibility flags. Use validate_section first when full
+        content validation is required; this function only builds the output view.
 
     Args:
         sections: User's section dictionary with titles as keys.
@@ -339,23 +393,53 @@ def get_rendercv_sections(
     sections_rendercv: list[BaseRenderCVSection] = []
 
     if sections is not None:
-        for title, entries in sections.items():
+        for title, content in sections.items():
+            if isinstance(content, SectionWithVisibility):
+                if content.hidden:
+                    continue
+                entries = content.entries
+            elif isinstance(content, dict):
+                if hidden_adapter.validate_python(content.get("hidden", False)):
+                    continue
+                entries = content["entries"]
+            else:
+                entries = content
+
+            visible_entries = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    if hidden_adapter.validate_python(entry.get("hidden", False)):
+                        continue
+                    entry_type_name, _ = get_entry_type_name_and_section_model(entry)
+                    visible_entries.append(
+                        entry["text"] if entry_type_name == "TextEntry" else entry
+                    )
+                elif isinstance(entry, str):
+                    visible_entries.append(entry)
+                elif not entry.hidden:
+                    visible_entries.append(
+                        entry.text if isinstance(entry, TextEntry) else entry
+                    )
+            # Preserve legacy deliberately empty headings, but omit a heading
+            # whose last entry was hidden. Never remove items from input data.
+            if entries and not visible_entries:
+                continue
             formatted_title = dictionary_key_to_proper_section_title(title)
 
-            if len(entries) == 0:
+            if len(visible_entries) == 0:
                 entry_type_name = "TextEntry"
             else:
                 # The first entry can be used because all the entries in the section
                 # are already validated with the `validate_a_section` function:
                 entry_type_name, _ = get_entry_type_name_and_section_model(
-                    entries[0],
+                    visible_entries[0],
                 )
 
             # SectionBase is used so that entries are not validated again:
             section = BaseRenderCVSection(
                 title=formatted_title,
                 entry_type=entry_type_name,
-                entries=entries,
+                entries=visible_entries,
             )
             sections_rendercv.append(section)
 

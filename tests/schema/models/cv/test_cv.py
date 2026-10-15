@@ -6,7 +6,11 @@ import pytest
 
 from rendercv.exception import RenderCVInternalError
 from rendercv.schema.models.cv.cv import Cv
-from rendercv.schema.models.cv.section import available_entry_type_names
+from rendercv.schema.models.cv.entries.normal import NormalEntry
+from rendercv.schema.models.cv.section import (
+    SectionWithVisibility,
+    available_entry_type_names,
+)
 
 
 class TestCv:
@@ -96,3 +100,32 @@ class TestCv:
 
         with pytest.raises(RenderCVInternalError, match="field_name is None"):
             Cv.validate_list_or_scalar_fields("test@example.com", mock_info)
+
+
+def test_section_view_tracks_parent_and_child_visibility_changes():
+    cv = Cv.model_validate(
+        {
+            "sections": {
+                "Work": {
+                    "entries": [{"name": "First"}, {"name": "Second", "hidden": True}],
+                }
+            }
+        }
+    )
+    assert [entry.name for entry in cv.rendercv_sections[0].entries] == ["First"]
+    assert cv.sections is not None
+
+    work = cv.sections["Work"]
+    assert isinstance(work, SectionWithVisibility)
+    first, second = work.entries
+    assert isinstance(first, NormalEntry)
+    assert isinstance(second, NormalEntry)
+    first.hidden = True
+    second.hidden = False
+    assert [entry.name for entry in cv.rendercv_sections[0].entries] == ["Second"]
+    work.hidden = True
+    assert cv.rendercv_sections == []
+    work.hidden = False
+    cv.sections["Renamed"] = cv.sections.pop("Work")
+    assert cv.rendercv_sections[0].title == "Renamed"
+    assert [entry.name for entry in cv.rendercv_sections[0].entries] == ["Second"]

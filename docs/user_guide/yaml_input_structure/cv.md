@@ -35,7 +35,7 @@ cv:
 The `sections` field holds the main content of your CV. It's a dictionary where:
 
 - **Keys** are section titles (displayed as headings). Section titles can be anything.
-- **Values** are lists of entries
+- **Values** are lists of entries, or objects with `entries` and an optional `hidden` flag.
 
 ```yaml
 cv:
@@ -95,6 +95,76 @@ sections:
 
 !!! warning "One entry type per section"
     Each section must contain only one type of entry. For example, you cannot mix `ExperienceEntry` and `EducationEntry` in the same section.
+
+## Hiding sections and entries
+
+Set `hidden: true` to omit a whole section or one entry from Typst, PDF, PNG,
+Markdown, and HTML output. Omitted `hidden` flags default to `false`.
+The input YAML and serialized model retain hidden content. Hidden entries still
+undergo validation, including required fields, dates, and the one-entry-type-per-section rule.
+
+To hide one structured entry, add the flag without changing its surrounding list:
+
+```yaml
+cv:
+  sections:
+    education:
+      - institution: A University
+        area: Computer Science
+        hidden: true
+```
+
+To hide a whole section, change that section's value from a list to an object and
+move the **entire list** under `entries`:
+
+```yaml
+cv:
+  sections:
+    education:
+      hidden: true
+      entries:
+        - institution: A University
+          area: Computer Science
+        - institution: B University
+          area: Mathematics
+          hidden: true
+```
+
+Setting the section's `hidden` to `false` shows A University again; B University
+remains hidden. A section whose entries are all hidden does not produce an empty
+heading. Deliberately empty legacy sections (`education: []`) keep their previous behavior.
+
+A plain text entry needs an object to carry the flag. Both forms may appear in
+the same text section:
+
+```yaml
+cv:
+  sections:
+    summary:
+      - This existing plain text entry remains visible.
+      - text: This text is saved but not rendered.
+        hidden: true
+      - text: This text is visible again.
+        hidden: false
+```
+
+Existing YAML does not need conversion. Unhiding requires only changing the flag;
+the `entries` or `text` wrapper can remain. Serialization may omit `hidden: false`
+because it is the default, but always retains `hidden: true` and hidden content.
+`hidden` is reserved visibility metadata, not a custom template placeholder.
+
+These formats are extensions of this RenderCV build. A browser editor and a local
+CLI must use the same modified RenderCV package and its generated `schema.json`.
+An unmodified upstream installation does not implement this feature. Newly
+generated YAML points to this fork's schema for language-server completion.
+For existing YAML, replace the upstream schema comment with:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/sshawn9/rendercv/main/schema.json
+```
+
+While working with unpublished changes, point the editor at the local `schema.json`.
+The remote schema reflects the changes after they are published to this fork.
 
 ## Entry Types
 

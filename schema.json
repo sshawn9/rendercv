@@ -179,6 +179,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "bullet": {
           "examples": [
             "Python, JavaScript, C++",
@@ -435,7 +441,7 @@
             }
           ],
           "default": null,
-          "description": "The sections of your CV. Keys are section titles (e.g., Experience, Education), and values are lists of entries. Entry types are automatically detected based on their fields.",
+          "description": "The sections of your CV. Keys are section titles (e.g., Experience, Education), and values are lists of entries or objects with entries and an optional hidden flag. Entry types are automatically detected based on their fields.",
           "examples": [
             {
               "Education": "...",
@@ -650,6 +656,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "institution": {
           "examples": [
             "Boğaziçi University",
@@ -1050,6 +1062,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "company": {
           "examples": [
             "Microsoft",
@@ -2157,7 +2175,7 @@
       "anyOf": [
         {
           "items": {
-            "type": "string"
+            "$ref": "#/$defs/TextEntryInput"
           },
           "type": "array"
         },
@@ -2450,6 +2468,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "name": {
           "examples": [
             "Some Project",
@@ -2781,6 +2805,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "number": {
           "examples": [
             "First publication about XYZ",
@@ -2800,6 +2830,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "label": {
           "examples": [
             "Languages",
@@ -3100,6 +3136,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "title": {
           "examples": [
             "Deep Learning for Computer Vision",
@@ -3331,6 +3373,12 @@
       "additionalProperties": true,
       "description": null,
       "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
         "reversed_number": {
           "description": "Reverse-numbered list item. Numbering goes in reverse (5, 4, 3, 2, 1), making recent items have higher numbers.",
           "examples": [
@@ -3486,6 +3534,16 @@
       "type": "object"
     },
     "Section": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ListOfEntries"
+        },
+        {
+          "$ref": "#/$defs/SectionWithVisibility"
+        }
+      ]
+    },
+    "SectionEntries": {
       "$ref": "#/$defs/ListOfEntries"
     },
     "SectionTitleType": {
@@ -3500,6 +3558,26 @@
         "centered_with_full_line"
       ],
       "type": "string"
+    },
+    "SectionWithVisibility": {
+      "additionalProperties": false,
+      "description": "Optional section wrapper. Legacy lists retain their original structure.",
+      "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide the entire section without changing its entries' visibility.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "entries": {
+          "$ref": "#/$defs/SectionEntries"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "SectionWithVisibility",
+      "type": "object"
     },
     "Settings": {
       "additionalProperties": false,
@@ -3685,6 +3763,38 @@
       },
       "title": "SpanishLocale",
       "type": "object"
+    },
+    "TextEntry": {
+      "additionalProperties": false,
+      "description": null,
+      "properties": {
+        "hidden": {
+          "default": false,
+          "description": "Hide this entry from all rendered outputs without deleting it.",
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "text": {
+          "description": "The text of this entry, with Markdown support.",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TextEntry",
+      "type": "object"
+    },
+    "TextEntryInput": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/TextEntry"
+        }
+      ]
     },
     "TurkishLocale": {
       "additionalProperties": false,
@@ -9571,6 +9681,6 @@
   "required": [],
   "title": "RenderCV",
   "type": "object",
-  "$id": "https://raw.githubusercontent.com/rendercv/rendercv/main/schema.json",
+  "$id": "https://raw.githubusercontent.com/sshawn9/rendercv/main/schema.json",
   "$schema": "http://json-schema.org/draft-07/schema#"
 }

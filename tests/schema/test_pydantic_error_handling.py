@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pydantic
 import pytest
 
-from rendercv.exception import RenderCVInternalError
+from rendercv.exception import RenderCVInternalError, RenderCVUserValidationError
 from rendercv.schema.models.custom_error_types import CustomPydanticErrorTypes
 from rendercv.schema.models.rendercv_model import RenderCVModel
 from rendercv.schema.models.validation_context import ValidationContext
@@ -12,6 +12,7 @@ from rendercv.schema.pydantic_error_handling import (
     get_inner_yaml_object_from_its_key,
     parse_validation_errors,
 )
+from rendercv.schema.rendercv_model_builder import build_rendercv_dictionary_and_model
 from rendercv.schema.yaml_reader import read_yaml
 
 
@@ -244,3 +245,92 @@ class TestGetInnerYamlObjectFromItsKey:
 
         with pytest.raises(RenderCVInternalError, match="Key 'nonexistent' not found"):
             get_inner_yaml_object_from_its_key(yaml_object, "nonexistent")
+
+
+def test_real_fields_matching_union_labels_are_not_removed_or_deduplicated():
+
+    source = """cv:
+  sections:
+    str:
+      entries: [Text]
+      str: true
+      intro: false
+      listing: true
+      literal: true
+"""
+    with pytest.raises(RenderCVUserValidationError) as caught:
+        build_rendercv_dictionary_and_model(source)
+    assert [
+        (error.schema_location, error.yaml_location[0][0])
+        for error in caught.value.validation_errors
+        if error.yaml_location
+    ] == [
+        (("cv", "sections", "str", "str"), 5),
+        (("cv", "sections", "str", "intro"), 6),
+        (("cv", "sections", "str", "listing"), 7),
+        (("cv", "sections", "str", "literal"), 8),
+    ]
+
+
+def test_union_label_collision_is_not_a_real_nested_field():
+
+    with pytest.raises(RenderCVUserValidationError) as caught:
+        build_rendercv_dictionary_and_model(
+            'cv:\n  photo:\n    "function-wrap[wrap_val()]": invalid\n'
+        )
+    assert {error.schema_location for error in caught.value.validation_errors} == {
+        ("cv", "photo")
+    }
+
+
+def test_overlay_extra_fields_keep_their_names_and_source_coordinates():
+
+    with pytest.raises(RenderCVUserValidationError) as caught:
+        build_rendercv_dictionary_and_model(
+            "cv: {}\n",
+            locale_yaml_file="locale:\n  language: english\n  str: bad\n  intro: bad\n",
+        )
+    assert [
+        (error.schema_location, error.yaml_source, error.yaml_location[0][0])
+        for error in caught.value.validation_errors
+        if error.yaml_location
+    ] == [
+        (("locale", "str"), "locale_yaml_file", 3),
+        (("locale", "intro"), "locale_yaml_file", 4),
+    ]
+
+
+def test_missing_fields_survive_path_normalization():
+
+    with pytest.raises(RenderCVUserValidationError) as caught:
+        build_rendercv_dictionary_and_model(
+            "cv:\n  sections:\n    Work:\n      entries:\n        - company: A\n"
+        )
+    missing = next(
+        error
+        for error in caught.value.validation_errors
+        if error.schema_location and error.schema_location[-1] == "position"
+    )
+    assert missing.schema_location == (
+        "cv",
+        "sections",
+        "Work",
+        "entries",
+        "0",
+        "position",
+    )
+    assert missing.yaml_location is not None
+    assert missing.yaml_location[0][0] == 5
+
+
+def test_unknown_date_fields_are_not_rewritten_as_date_format_errors():
+    with pytest.raises(RenderCVUserValidationError) as caught:
+        build_rendercv_dictionary_and_model(
+            "cv:\n  sections:\n    Notes:\n      entries: [Text]\n      end_date: bad\n      current_date_note: bad\n"
+        )
+    assert {
+        error.schema_location[-1]
+        for error in caught.value.validation_errors
+        if error.schema_location
+    } == {"end_date", "current_date_note"}
+    assert all("unknown" in error.message for error in caught.value.validation_errors)

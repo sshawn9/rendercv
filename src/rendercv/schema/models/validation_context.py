@@ -53,6 +53,9 @@ def get_current_date(info: pydantic.ValidationInfo) -> Date:
         context = cast(ValidationContext, info.context["context"])
         if isinstance(context.current_date, Date):
             return context.current_date
-        if context.current_date == "today":
-            return Date.today()
+        if isinstance(context.current_date, str) and context.current_date != "today":
+            try:
+                return Date.fromisoformat(context.current_date)
+            except ValueError:
+                pass  # Settings supplies the diagnostic for an invalid date.
     return Date.today()

@@ -8,7 +8,7 @@ import ruamel.yaml
 import ruamel.yaml.nodes
 import ruamel.yaml.representer
 
-from rendercv import __version__
+from rendercv import __schema_url__
 from rendercv.exception import RenderCVUserError
 
 from .models.cv.cv import Cv
@@ -213,10 +213,7 @@ def create_sample_yaml_input_file(
     yaml_string = expand_nested_bullets(dictionary_to_yaml(data_model_as_dictionary))
 
     # Add a comment to the first line, for JSON Schema:
-    schema_comment = (
-        "# yaml-language-server:"
-        f" $schema=https://raw.githubusercontent.com/rendercv/rendercv/refs/tags/v{__version__}/schema.json\n"
-    )
+    schema_comment = f"# yaml-language-server: $schema={__schema_url__}\n"
     yaml_string = schema_comment + yaml_string
 
     # Comment out design and locale sub-fields so beginners see the structure

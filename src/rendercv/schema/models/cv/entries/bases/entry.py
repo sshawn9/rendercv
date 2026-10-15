@@ -19,6 +19,13 @@ class BaseEntry(BaseModelWithExtraKeys):
 
     model_config = pydantic.ConfigDict(json_schema_extra={"description": None})
 
+    hidden: bool = pydantic.Field(
+        default=False,
+        description="Hide this entry from all rendered outputs without deleting it.",
+        # Keep legacy serialization unchanged, but retain true for round trips.
+        exclude_if=lambda value: value is False,
+    )
+
     @functools.cached_property
     def entry_type_in_snake_case(self) -> str:
         """Convert class name to snake_case for template attribute lookup.

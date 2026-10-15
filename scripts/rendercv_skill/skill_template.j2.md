@@ -264,7 +264,7 @@ Scaffold a custom theme directory with editable Typst templates for complete des
 For YAML editor autocompletion and validation:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/rendercv/rendercv/refs/tags/v{{ version }}/schema.json
+# yaml-language-server: $schema={{ schema_url }}
 ```
 
 ## Complete Example

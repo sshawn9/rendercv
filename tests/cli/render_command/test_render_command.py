@@ -197,7 +197,8 @@ class TestCliCommandRender:
                 "locale:\n  language: turkish\n",
                 'locale-catalog-language: "tr"',
             ),
-            ("settings", "settings:\n  current_date: 1999-01-15\n", "Jan 1999"),
+            # current_date also defines "present" in the sample's ongoing entries.
+            ("settings", "settings:\n  current_date: 2035-01-15\n", "Jan 2035"),
         ],
     )
     def test_uses_custom_config_files(

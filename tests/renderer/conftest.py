@@ -348,7 +348,7 @@ def create_combinations_of_entry_type(
     Creates instances with: only required fields, then all combinations of optional
     fields being set/unset. Used to test rendering with various field combinations.
     """
-    ignore_fields = ignore_fields or set()
+    ignore_fields = (ignore_fields or set()) | {"hidden"}
 
     required_fields = {}
     optional_fields = {}

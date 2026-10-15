@@ -1,4 +1,3 @@
-import functools
 from typing import Any, Self
 
 import pydantic
@@ -104,7 +103,8 @@ class Cv(BaseModelWithoutExtraKeys):
         default=None,
         description=(
             "The sections of your CV. Keys are section titles (e.g., Experience,"
-            " Education), and values are lists of entries. Entry types are"
+            " Education), and values are lists of entries or objects with entries"
+            " and an optional hidden flag. Entry types are"
             " automatically detected based on their fields."
         ),
         examples=[
@@ -125,18 +125,17 @@ class Cv(BaseModelWithoutExtraKeys):
     # that the user defines.
     _key_order: list[str] = pydantic.PrivateAttr(default_factory=list)
 
-    @functools.cached_property
+    # Only an isolated rendering copy owns processed sections. Reading the
+    # source model never installs a cache that could outlive a visibility edit.
+    _rendered_sections: list[BaseRenderCVSection] | None = pydantic.PrivateAttr(
+        default=None
+    )
+
+    @property
     def rendercv_sections(self) -> list[BaseRenderCVSection]:
-        """Transform user's section dict to list of typed section objects.
-
-        Why:
-            Templates need sections as list with title/entry_type metadata.
-            Cached property computes once after validation, enabling repeated
-            template access without recomputation.
-
-        Returns:
-            List of section objects for template rendering.
-        """
+        """Return current visible input, or the prepared rendering copy's sections."""
+        if self._rendered_sections is not None:
+            return self._rendered_sections
         return get_rendercv_sections(self.sections)
 
     @pydantic.model_validator(mode="wrap")  # ty: ignore[invalid-argument-type]

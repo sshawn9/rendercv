@@ -1,9 +1,14 @@
+import base64
+import json
 import pathlib
 import shutil
 import subprocess
 import sys
 
 import pytest
+
+from rendercv.renderer.templater.templater import render_full_template
+from rendercv.schema.rendercv_model_builder import build_rendercv_dictionary_and_model
 
 PROJECT_ROOT = pathlib.Path(__file__).parent.parent
 
@@ -69,7 +74,9 @@ def js_runtime(tmp_path: pathlib.Path) -> str:
     return bun
 
 
-def test_rendercv_installs_in_pyodide(tmp_path: pathlib.Path, js_runtime: str) -> None:
+def test_rendercv_installs_and_renders_visibility_in_pyodide(
+    tmp_path: pathlib.Path, js_runtime: str
+) -> None:
     # Build the wheel into tmp
     subprocess.run(
         ["uv", "build", "--wheel", "--out-dir", str(tmp_path / "dist")],
@@ -82,6 +89,36 @@ def test_rendercv_installs_in_pyodide(tmp_path: pathlib.Path, js_runtime: str) -
 
     # Use forward slashes so the path works on Windows too
     wheel_posix_path = wheel.resolve().as_posix()
+
+    # Feed the identical YAML to native Python and the wheel inside Pyodide.
+    source = """cv:
+  name: Visibility
+  sections:
+    Work:
+      entries:
+        - name: Visible
+        - name: Secret
+          hidden: true
+    Archived:
+      hidden: true
+      entries:
+        - bullet: Secret section
+    Summary:
+      - Plain text
+      - text: Secret text
+        hidden: true
+settings:
+  current_date: 2026-10-15
+"""
+    _, model = build_rendercv_dictionary_and_model(source)
+    expected = {
+        "typst": render_full_template(model, "typst"),
+        "markdown": render_full_template(model, "markdown"),
+    }
+    assert all("Secret" not in output for output in expected.values())
+    fixture = base64.b64encode(
+        json.dumps({"source": source, "expected": expected}).encode()
+    ).decode()
 
     script = tmp_path / "test.mjs"
     script.write_text(f"""\
@@ -108,8 +145,18 @@ await micropip.install("email-validator")
 # Install rendercv from Pyodide's virtual filesystem
 await micropip.install("emfs:/tmp/{wheel.name}")
 
-# Verify import works
-import rendercv
+# Verify visibility and native/WASM parity, beyond a successful import.
+import base64, json
+from rendercv.schema.rendercv_model_builder import build_rendercv_dictionary_and_model
+from rendercv.renderer.templater.templater import render_full_template
+case = json.loads(base64.b64decode("{fixture}"))
+_, model = build_rendercv_dictionary_and_model(case["source"])
+before = model.cv.model_dump_json()
+for fmt, expected in case["expected"].items():
+    assert render_full_template(model, fmt) == expected, fmt
+assert model.cv.model_dump_json() == before
+assert model.cv.sections["Archived"].hidden is True
+assert model.cv.sections["Summary"][1].hidden is True
     `);
 }}
 

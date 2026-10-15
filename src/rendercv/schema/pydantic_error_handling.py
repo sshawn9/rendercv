@@ -21,15 +21,35 @@ error_dictionary = cast(
     read_yaml(pathlib.Path(__file__).parent / "error_dictionary.yaml"),
 )
 unwanted_texts = ("value is not a valid email address: ", "Value error, ")
-unwanted_locations = (
-    "tagged-union",
-    "list",
-    "literal",
-    "int",
-    "str",
-    "constrained-str",
-    "function-",
-)
+
+
+def input_location(
+    location: tuple[str | int, ...],
+    input_dictionary: dict[Any, Any],
+    *,
+    missing: bool = False,
+    error_input: Any = None,
+) -> tuple[str, ...]:
+    """Keep real input keys/indices, skipping Pydantic's union branch labels.
+
+    Arbitrary keys such as str, listing or literal must survive unchanged. A
+    missing required field has no input node, so retain its final path element.
+    """
+    node: Any = input_dictionary
+    result: list[str] = []
+    for index, key in enumerate(location):
+        # A terminal union label can coincidentally be a key in an invalid
+        # mapping (e.g. a photo URL supplied as {"function-wrap[wrap_val()]": ...}).
+        if not missing and index == len(location) - 1 and node == error_input:
+            break
+        if (isinstance(node, dict) and key in node) or (
+            isinstance(node, list) and isinstance(key, int) and 0 <= key < len(node)
+        ):
+            result.append(str(key))
+            node = node[key]
+        elif missing and index == len(location) - 1:
+            result.append(str(key))
+    return tuple(result)
 
 
 def parse_plain_pydantic_error(
@@ -50,7 +70,7 @@ def parse_plain_pydantic_error(
     for unwanted_text in unwanted_texts:
         plain_error["msg"] = plain_error["msg"].replace(unwanted_text, "")
 
-    if plain_error["loc"][0] in ["design", "locale"]:
+    if plain_error["loc"] and plain_error["loc"][0] in ["design", "locale"]:
         # Skip the second key because it's the discriminator value.
         plain_error["loc"] = plain_error["loc"][:1] + plain_error["loc"][2:]
 
@@ -61,26 +81,29 @@ def parse_plain_pydantic_error(
         if "loc" in plain_error["ctx"]:
             plain_error["loc"] = plain_error["ctx"]["loc"]
 
-    location = tuple(
-        str(location_element)
-        for location_element in plain_error["loc"]
-        if not any(item in str(location_element) for item in unwanted_locations)
+    location = input_location(
+        plain_error["loc"],
+        input_dictionary,
+        missing=plain_error["type"] == "missing",
+        error_input=plain_error["input"],
     )
     # Special case for end_date because Pydantic returns multiple end_date errors
     # since it has multiple valid formats:
-    if location and "end_date" in location[-1]:
+    if (
+        location
+        and location[-1] == "end_date"
+        and plain_error["type"] != "extra_forbidden"
+    ):
         plain_error["msg"] = (
             "This is not a valid `end_date`! Please use either YYYY-MM-DD, YYYY-MM,"
             ' or YYYY format or "present"!'
         )
 
-    # Special case for current_date: the field is typed as datetime.date |
-    # Literal["today"]. Pydantic appends "date" to the loc for the datetime.date
-    # union branch (e.g. ("settings", "current_date", "date")). Strip that suffix
-    # first so the field name lands at location[-1], matching the end_date pattern.
-    if len(location) >= 2 and location[-1] == "date" and location[-2] == "current_date":
-        location = location[:-1]
-    if location and "current_date" in location[-1]:
+    if (
+        location
+        and location[-1] == "current_date"
+        and plain_error["type"] != "extra_forbidden"
+    ):
         plain_error["msg"] = (
             "This is not a valid `current_date`! Please use YYYY-MM-DD format or"
             ' "today".'
@@ -194,23 +217,20 @@ def get_inner_yaml_object_from_its_key(
     Returns:
         Tuple of nested object and ((start_line, start_col), (end_line, end_col)).
     """
-    # If the part is numeric, interpret it as a list index:
-    try:
-        index = int(location_key)
+    if isinstance(yaml_object, list):
         try:
+            index = int(location_key)
             inner_yaml_object = yaml_object[index]
-            # Get the coordinates from the list's lc.data (which is a list of tuples).
             start_line, start_col = yaml_object.lc.data[index]
             end_line, end_col = start_line, start_col
             coordinates = ((start_line + 1, start_col - 1), (end_line + 1, end_col))
         except IndexError as e:
-            message = f"Index {index} is out of range in the YAML file."
+            message = f"Index {location_key} is out of range in the YAML file."
             raise RenderCVInternalError(message) from e
-    except ValueError as e:
-        # Otherwise, the part is a key in a mapping.
+    else:
         if location_key not in yaml_object:
             message = f"Key '{location_key}' not found in the YAML file."
-            raise RenderCVInternalError(message) from e
+            raise RenderCVInternalError(message)
 
         inner_yaml_object = yaml_object[location_key]
         start_line, start_col, end_line, end_col = yaml_object.lc.data[location_key]

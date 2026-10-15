@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from rendercv.exception import RenderCVUserError
-from rendercv.schema.models.cv.section import Entry
+from rendercv.schema.models.cv.section import Entry, get_rendercv_sections
 from rendercv.schema.models.rendercv_model import RenderCVModel
 
 from .connections import compute_connections
@@ -78,6 +78,11 @@ def process_model(
         Processed model ready for templates.
     """
     rendercv_model = rendercv_model.model_copy(deep=True)
+    # The source model stays live; only this copy stores the processed view
+    # shared by the entry processor and the final templates.
+    rendercv_model.cv._rendered_sections = get_rendercv_sections(
+        rendercv_model.cv.sections
+    )
 
     string_processors: list[Callable[[str], str]] = [
         lambda string: make_keywords_bold(string, rendercv_model.settings.bold_keywords)
@@ -165,7 +170,7 @@ def process_fields(
     Returns:
         Entry with processed fields.
     """
-    skipped = {"start_date", "end_date", "doi", "url"}
+    skipped = {"start_date", "end_date", "doi", "url", "hidden"}
 
     if isinstance(entry, str):
         return apply_string_processors(entry, string_processors)

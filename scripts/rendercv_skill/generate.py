@@ -17,7 +17,7 @@ import zipfile
 import jinja2
 import ruamel.yaml
 
-from rendercv import __version__
+from rendercv import __schema_url__, __version__
 from rendercv.schema.models.locale.locale import available_locales
 from rendercv.schema.sample_generator import (
     create_sample_cv_file,
@@ -295,6 +295,7 @@ def build_template_context() -> dict:
 
     return {
         "version": __version__,
+        "schema_url": __schema_url__,
         "available_themes": SKILL_THEMES,
         "available_locales": available_locales,
         "model_sources": model_sources,
