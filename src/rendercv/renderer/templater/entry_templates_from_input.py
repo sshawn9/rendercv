@@ -12,6 +12,9 @@ from .date import compute_time_span_string, format_date_range, format_single_dat
 from .string_processor import clean_url, substitute_placeholders
 
 uppercase_word_pattern = re.compile(r"\b[A-Z_]+\b")
+formatted_date_pattern = re.compile(
+    r"(?<![\\*])(?P<emphasis>\*{1,3})DATE(?P=emphasis)(?!\*)"
+)
 
 
 # Matches a bare connector word between placeholders: starts with a non-uppercase
@@ -218,6 +221,20 @@ def render_entry_templates[EntryType: Entry](
             entry_fields["SUMMARY"] = process_summary(entry_fields["SUMMARY"])
 
     entry_templates = remove_not_provided_placeholders(entry_templates, entry_fields)
+
+    # DATE can contain separate paragraphs for the range and its duration.
+    # Markdown emphasis must close before each paragraph boundary.
+    date_text = entry_fields.get("DATE", "")
+    if "\n" in date_text:
+        for template_name, template in entry_templates.items():
+            entry_templates[template_name] = formatted_date_pattern.sub(
+                lambda match: "\n\n".join(
+                    f"{match['emphasis']}{part}{match['emphasis']}"
+                    for part in date_text.split("\n\n")
+                    if part
+                ),
+                template,
+            )
 
     for template_name, template in (entry_templates | entry_fields).items():
         setattr(

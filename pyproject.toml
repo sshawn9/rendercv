@@ -87,6 +87,7 @@ rendercv = "rendercv.cli.entry_point:entry_point"
 [dependency-groups]
 dev = [
   "black>=26.3.1",  # Format the code
+  "codespell==2.4.2",  # Check spelling with the existing hook version
   "hypothesis>=6.151.9",  # Property-based testing
   "prek>=0.3.6",  # Run checks before committing (pre-commit alternative)
   "pytest>=9.0.2",  # Run tests

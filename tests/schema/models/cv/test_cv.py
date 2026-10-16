@@ -129,3 +129,21 @@ def test_section_view_tracks_parent_and_child_visibility_changes():
     cv.sections["Renamed"] = cv.sections.pop("Work")
     assert cv.rendercv_sections[0].title == "Renamed"
     assert [entry.name for entry in cv.rendercv_sections[0].entries] == ["Second"]
+
+
+@pytest.mark.parametrize(
+    ("phone", "expected"),
+    [
+        (None, None),
+        ([], []),
+        (
+            ["+14155552671", "+442071838750"],
+            ["+1-415-555-2671", "+44-20-7183-8750"],
+        ),
+    ],
+)
+def test_phone_serialization_preserves_lists_and_round_trips(phone, expected):
+    cv = Cv.model_validate({"phone": phone})
+    assert cv.model_dump()["phone"] == expected
+    restored = Cv.model_validate_json(cv.model_dump_json())
+    assert restored.phone == cv.phone

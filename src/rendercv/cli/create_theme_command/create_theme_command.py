@@ -11,7 +11,7 @@ from rendercv.exception import RenderCVUserError
 from ..app import app
 from ..copy_templates import copy_templates
 from ..error_handler import handle_user_errors
-from .create_init_file_for_theme import create_init_file_for_theme
+from .create_init_file_for_theme import create_init_file_for_theme, validate_theme_name
 
 
 @app.command(
@@ -29,6 +29,7 @@ def cli_command_create_theme(
         typer.Argument(help="The name of the new theme"),
     ],
 ) -> None:
+    validate_theme_name(theme_name)
     new_theme_folder = pathlib.Path.cwd() / theme_name
 
     if new_theme_folder.exists():

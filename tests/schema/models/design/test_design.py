@@ -195,3 +195,14 @@ class SomeOtherClass(BaseModel):
                     )
                 },
             )
+
+
+def test_numeric_template_only_theme_name_remains_supported(tmp_path):
+    theme_dir = tmp_path / "123theme"
+    theme_dir.mkdir()
+    (theme_dir / "Header.j2.typ").write_text("Custom header")
+    design = pydantic.TypeAdapter[Design](Design).validate_python(
+        {"theme": theme_dir.name},
+        context={"context": ValidationContext(input_file_path=tmp_path / "cv.yaml")},
+    )
+    assert design.theme == "123theme"

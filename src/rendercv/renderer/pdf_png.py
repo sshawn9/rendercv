@@ -12,6 +12,7 @@ from rendercv.exception import RenderCVInternalError
 from rendercv.schema.models.rendercv_model import RenderCVModel
 
 from .path_resolver import resolve_rendercv_file_path
+from .typst import copy_photo_next_to_typst_file
 
 
 def generate_pdf(
@@ -90,27 +91,6 @@ def generate_png(
         png_files.append(png_file)
 
     return png_files if png_files else None
-
-
-def copy_photo_next_to_typst_file(
-    rendercv_model: RenderCVModel, typst_path: pathlib.Path
-) -> None:
-    """Copy CV photo to Typst file directory for compilation.
-
-    Why:
-        Typst compiler resolves image paths relative to source file location.
-        Copying photo ensures compilation succeeds regardless of original
-        photo location.
-
-    Args:
-        rendercv_model: CV model containing photo path.
-        typst_path: Path to Typst source file.
-    """
-    photo_path = rendercv_model.cv.photo
-    if isinstance(photo_path, pathlib.Path):
-        copy_to = typst_path.parent / photo_path.name
-        if photo_path != copy_to:
-            shutil.copy(photo_path, copy_to)
 
 
 def read_version_from_typst_toml(typst_toml_path: pathlib.Path) -> str:

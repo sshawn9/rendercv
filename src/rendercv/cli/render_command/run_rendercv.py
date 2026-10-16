@@ -1,7 +1,7 @@
 import contextlib
 import pathlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Literal, Unpack
 
 import jinja2
@@ -18,6 +18,10 @@ from rendercv.schema.rendercv_model_builder import (
 )
 
 from .progress_panel import ProgressPanel
+
+type InputFilePaths = dict[
+    Literal["input", "design", "locale", "settings"], pathlib.Path
+]
 
 
 def timed_step[T, **P](
@@ -77,7 +81,8 @@ def collect_input_file_paths(
     design: pathlib.Path | None = None,
     locale: pathlib.Path | None = None,
     settings: pathlib.Path | None = None,
-) -> dict[Literal["input", "design", "locale", "settings"], pathlib.Path]:
+    overrides: dict[str, str] | None = None,
+) -> InputFilePaths:
     """Collect all input file paths involved in a render.
 
     Why:
@@ -91,14 +96,13 @@ def collect_input_file_paths(
         input_file_path: Path to the main YAML input file.
         design: CLI-provided design file path.
         locale: CLI-provided locale file path.
-        settings: CLI-provided settings file path.
+        settings: CLI-provided settings file path. Replaces settings in the main YAML.
+        overrides: Dotted CLI overrides, applied after dedicated flags.
 
     Returns:
         Mapping from role ("input", "design", "locale", "settings") to path.
     """
-    files: dict[Literal["input", "design", "locale", "settings"], pathlib.Path] = {
-        "input": input_file_path
-    }
+    files: InputFilePaths = {"input": input_file_path}
 
     if design:
         files["design"] = design
@@ -107,19 +111,34 @@ def collect_input_file_paths(
     if settings:
         files["settings"] = settings
 
-    # Also include design/locale files referenced in the YAML itself
-    # (CLI flags take precedence, so skip if already provided).
-    # If YAML is invalid, watch mode should still start by watching the main file.
-    with contextlib.suppress(RenderCVUserValidationError):
-        main_dict = read_yaml_with_validation_errors(
-            input_file_path.read_text(encoding="utf-8"),
-            "main_yaml_file",
+    # Standalone settings replace the main settings, including their references.
+    # Discovery tolerates temporarily missing/invalid files so watch can recover;
+    # run_rendercv reports the actual read or validation error on every attempt.
+    rc: Mapping = {}
+    with contextlib.suppress(OSError, RenderCVUserError, RenderCVUserValidationError):
+        source = settings if settings is not None else input_file_path
+        document = read_yaml_with_validation_errors(
+            source.read_text(encoding="utf-8"),
+            "settings_yaml_file" if settings is not None else "main_yaml_file",
         )
-        rc = main_dict.get("settings", {}).get("render_command", {})
-        if "design" not in files and rc.get("design"):
-            files["design"] = (input_file_path.parent / rc["design"]).resolve()
-        if "locale" not in files and rc.get("locale"):
-            files["locale"] = (input_file_path.parent / rc["locale"]).resolve()
+        if isinstance(document, Mapping):
+            settings_dict = document.get("settings", {})
+            if isinstance(settings_dict, Mapping):
+                render_command = settings_dict.get("render_command", {})
+                if isinstance(render_command, Mapping):
+                    rc = render_command
+
+    for role in ("design", "locale"):
+        override = (overrides or {}).get(f"settings.render_command.{role}")
+        if override is not None:
+            files.pop(role, None)
+            reference = override
+        elif role in files:
+            continue
+        else:
+            reference = rc.get(role)
+        if isinstance(reference, str) and reference:
+            files[role] = (input_file_path.parent / reference).resolve()
 
     return files
 
@@ -127,6 +146,8 @@ def collect_input_file_paths(
 def run_rendercv(
     input_file_path: pathlib.Path,
     progress: ProgressPanel,
+    *,
+    input_file_paths: InputFilePaths | None = None,
     **kwargs: Unpack[BuildRendercvModelArguments],
 ) -> None:
     """Execute complete CV generation pipeline with progress tracking and error handling.
@@ -134,10 +155,35 @@ def run_rendercv(
     Args:
         input_file_path: Path to the main YAML input file.
         progress: Progress panel for output display.
+        input_file_paths: CLI input files to read afresh for this render.
         kwargs: Optional YAML overlay strings, output paths, and generation flags.
     """
     try:
         main_yaml = input_file_path.read_text(encoding="utf-8")
+        if input_file_paths is not None:
+            for role, argument in (
+                ("settings", "settings_yaml_file"),
+                ("design", "design_yaml_file"),
+                ("locale", "locale_yaml_file"),
+            ):
+                if role in input_file_paths:
+                    path = input_file_paths[role]
+                    content = path.read_text(encoding="utf-8")
+                    if not content.strip():
+                        message = f"The input file `{path}` is empty!"
+                        raise RenderCVUserError(message)
+                    kwargs[argument] = content
+            # Validate the selected files, not stale references overridden by CLI.
+            kwargs["overrides"] = {
+                **(kwargs.get("overrides") or {}),
+                **{
+                    f"settings.render_command.{role}": str(
+                        input_file_paths[role].absolute()
+                    )
+                    for role in ("design", "locale")
+                    if role in input_file_paths
+                },
+            }
 
         _, rendercv_model = timed_step(
             "Validated the input file",

@@ -46,6 +46,12 @@ class RenderCVUserError(ValueError):
 
     message: str | None = field(default=None)
 
+    def __post_init__(self) -> None:
+        if self.message is None:
+            super().__init__()
+        else:
+            super().__init__(self.message)
+
 
 @dataclass
 class RenderCVUserValidationError(ValueError):
@@ -59,6 +65,9 @@ class RenderCVUserValidationError(ValueError):
 
     validation_errors: list[RenderCVValidationError]
 
+    def __post_init__(self) -> None:
+        super().__init__(self.validation_errors)
+
 
 @dataclass
 class RenderCVInternalError(RuntimeError):
@@ -71,3 +80,6 @@ class RenderCVInternalError(RuntimeError):
     """
 
     message: str
+
+    def __post_init__(self) -> None:
+        super().__init__(self.message)

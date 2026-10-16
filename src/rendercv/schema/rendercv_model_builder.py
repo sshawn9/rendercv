@@ -8,6 +8,7 @@ from ruamel.yaml.comments import CommentedMap
 from rendercv.exception import (
     OVERLAY_SOURCE_TO_YAML_SOURCE,
     OverlaySourceKey,
+    RenderCVInternalError,
     RenderCVUserValidationError,
     RenderCVValidationError,
     YamlLocation,
@@ -82,7 +83,11 @@ def read_yaml_with_validation_errors(
         RenderCVUserValidationError: If YAML cannot be parsed.
     """
     try:
-        return read_yaml(yaml_content)
+        parsed = read_yaml(yaml_content)
+    except RenderCVInternalError:
+        # read_yaml treats scalar strings as accidentally supplied filenames.
+        # Here the argument is explicitly YAML content, so reject its shape below.
+        parsed = None
     except ruamel.yaml.YAMLError as e:
         parser_message = str(e).splitlines()[0].strip()
         if not parser_message.endswith("."):
@@ -100,6 +105,20 @@ def read_yaml_with_validation_errors(
             ]
         ) from e
 
+    if not isinstance(parsed, CommentedMap):
+        raise RenderCVUserValidationError(
+            validation_errors=[
+                RenderCVValidationError(
+                    schema_location=None,
+                    yaml_location=None,
+                    yaml_source=yaml_source,
+                    message="The YAML document must contain a mapping of field names to values.",
+                    input="...",
+                )
+            ]
+        )
+    return parsed
+
 
 def build_rendercv_dictionary(
     main_yaml_file: str,
@@ -115,7 +134,6 @@ def build_rendercv_dictionary(
         Tuple of merged dictionary and overlay source CommentedMaps (for error reporting).
     """
     input_dict = read_yaml_with_validation_errors(main_yaml_file, "main_yaml_file")
-    input_dict.setdefault("settings", {}).setdefault("render_command", {})
 
     yaml_overlays: dict[OverlaySourceKey, str | None] = {
         "settings": kwargs.get("settings_yaml_file"),
@@ -129,8 +147,27 @@ def build_rendercv_dictionary(
             overlay_cm = read_yaml_with_validation_errors(
                 yaml_content, OVERLAY_SOURCE_TO_YAML_SOURCE[key]
             )
+            if key not in overlay_cm:
+                raise RenderCVUserValidationError(
+                    validation_errors=[
+                        RenderCVValidationError(
+                            schema_location=(key,),
+                            yaml_location=None,
+                            yaml_source=OVERLAY_SOURCE_TO_YAML_SOURCE[key],
+                            message=f"This file must contain the `{key}` field.",
+                            input="...",
+                        )
+                    ]
+                )
             input_dict[key] = overlay_cm[key]
             overlay_sources[key] = overlay_cm
+
+    settings = input_dict.setdefault("settings", {})
+    render_command = (
+        settings.setdefault("render_command", {})
+        if isinstance(settings, dict)
+        else None
+    )
 
     render_overrides: dict[str, pathlib.Path | str | bool | None] = {
         "output_folder": kwargs.get("output_folder"),
@@ -147,8 +184,8 @@ def build_rendercv_dictionary(
     }
 
     for key, value in render_overrides.items():
-        if value:
-            input_dict["settings"]["render_command"][key] = value
+        if value and isinstance(render_command, dict):
+            render_command[key] = value
 
     overrides = kwargs.get("overrides")
     if overrides:
@@ -172,12 +209,15 @@ def build_rendercv_model_from_commented_map(
     Returns:
         Validated RenderCVModel instance.
     """
+    settings = commented_map.get("settings", {})
     try:
         validation_context = {
             "context": ValidationContext(
                 input_file_path=input_file_path,
-                current_date=commented_map.get("settings", {}).get(
-                    "current_date", "today"
+                current_date=(
+                    settings.get("current_date", "today")
+                    if isinstance(settings, dict)
+                    else "today"
                 ),
             )
         }

@@ -4,6 +4,19 @@ from rendercv.exception import RenderCVUserError
 from rendercv.schema.models.design.design import custom_theme_name_pattern
 
 
+def validate_theme_name(theme_name: str) -> None:
+    """Reject invalid paths and names that cannot produce a Python theme class."""
+    if not custom_theme_name_pattern.fullmatch(theme_name) or not (
+        f"{theme_name.capitalize()}Theme".isidentifier()
+    ):
+        message = (
+            "The custom theme name must start with a lowercase letter and contain"
+            " only lowercase letters and digits."
+            f" The provided value is `{theme_name}`."
+        )
+        raise RenderCVUserError(message)
+
+
 def create_init_file_for_theme(theme_name: str, init_file_path: pathlib.Path) -> None:
     """Generate `__init__.py` for custom theme by templating from ClassicTheme.
 
@@ -16,12 +29,7 @@ def create_init_file_for_theme(theme_name: str, init_file_path: pathlib.Path) ->
         theme_name: Snake_case theme identifier.
         init_file_path: Destination path for __init__.py.
     """
-    if not custom_theme_name_pattern.match(theme_name):
-        message = (
-            "The custom theme name should only contain lowercase letters and digits."
-            f" The provided value is `{theme_name}`."
-        )
-        raise RenderCVUserError(message)
+    validate_theme_name(theme_name)
 
     classic_theme_file = (
         pathlib.Path(__file__).parent.parent.parent

@@ -296,3 +296,58 @@ class TestDownloadPhotoFromUrl:
 
         assert exc_info.value.message is not None
         assert "Failed to download photo" in exc_info.value.message
+
+
+@pytest.mark.parametrize(
+    ("marker", "opening", "closing"),
+    [
+        ("**", "#strong[", "]"),
+        ("*", "#emph[", "]"),
+        ("***", "#strong[#emph[", "]]"),
+    ],
+)
+@pytest.mark.parametrize("show_time_span", [False, True])
+def test_formatted_date_keeps_emphasis_across_duration_paragraphs(
+    marker, opening, closing, show_time_span
+):
+    model = RenderCVModel.model_validate(
+        {
+            "cv": {
+                "sections": {
+                    "experience": [
+                        {
+                            "company": "Example",
+                            "position": "Engineer",
+                            "location": "Remote",
+                            "start_date": "2021-02",
+                            "end_date": "2022-02",
+                        }
+                    ]
+                }
+            },
+            "design": {
+                "theme": "classic",
+                "sections": {
+                    "show_time_spans_in": ["experience"] if show_time_span else []
+                },
+                "templates": {
+                    "experience_entry": {
+                        "date_and_location_column": f"{marker}DATE{marker}\nLOCATION"
+                    }
+                },
+            },
+        }
+    )
+    parts = ["Feb 2021 – Feb 2022"]
+    if show_time_span:
+        parts.append("1 year 1 month")
+    markdown = process_model(model, "markdown").cv.rendercv_sections[0].entries[0]
+    typst = process_model(model, "typst").cv.rendercv_sections[0].entries[0]
+    assert (
+        markdown.date_and_location_column
+        == "\n\n".join(f"{marker}{part}{marker}" for part in parts) + "\nRemote"
+    )
+    assert (
+        typst.date_and_location_column
+        == "\n\n".join(f"{opening}{part}{closing}" for part in parts) + "\nRemote"
+    )

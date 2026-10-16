@@ -29,3 +29,26 @@ settings:
 3. Available placeholders are: `NAME`, `NAME_IN_SNAKE_CASE`, `NAME_IN_LOWER_SNAKE_CASE`, `NAME_IN_UPPER_SNAKE_CASE`, `NAME_IN_KEBAB_CASE`, `NAME_IN_LOWER_KEBAB_CASE`, `NAME_IN_UPPER_KEBAB_CASE`, `MONTH_NAME`, `MONTH_ABBREVIATION`, `MONTH`, `MONTH_IN_TWO_DIGITS`, `YEAR`, `YEAR_IN_TWO_DIGITS`.
 4. These keywords will be bolded wherever they appear in your CV text (highlights, summaries, etc.).
 5. Date used for file naming (when using date placeholders), the "last updated" text in the top note, and time span calculations for ongoing events (entries with `end_date: present`)
+
+
+## Using a separate settings file
+
+A separate settings file must contain the `settings` field, just like the main CV file:
+
+```yaml
+# settings.yaml
+settings:
+  render_command:
+    design: design.yaml
+    locale: locale.yaml
+```
+
+```bash
+rendercv render cv.yaml --settings settings.yaml
+```
+
+This loads the referenced design and locale files as well. The separate `settings` field replaces the main file's `settings` field in full. Relative paths inside YAML are resolved from the **main CV file's directory**, including references in a separate settings file. File paths passed directly with `--settings`, `--design`, and `--locale-catalog` are resolved from the current working directory.
+
+`--design` and `--locale-catalog` take precedence over YAML references. Dotted field overrides, such as `--settings.render_command.design other.yaml` or `--design.theme classic`, are applied last. A dotted file reference follows the same path rules as its YAML field.
+
+With `--watch`, edits to the main CV, settings, design, or locale files reload their current contents. Changing a design or locale reference also updates the files being watched. Atomic replacement saves and files created after an error are detected too.

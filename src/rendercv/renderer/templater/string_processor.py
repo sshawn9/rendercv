@@ -81,6 +81,16 @@ def build_keyword_matcher_pattern(
     return re.compile(pattern)
 
 
+# Keep existing emphasis and literal Markdown syntax intact while matching text.
+protected_markdown_pattern = re.compile(
+    r"\\."
+    r"|(?P<ticks>`+).*?(?<!`)(?P=ticks)(?!`)"
+    r"|(?P<strong>\*\*|__)(?=\S)(?:\\.|(?!\n\n)[^\\])*?(?<=\S)(?P=strong)"
+    r"|\]\((?:\\.|[^()\\]|\([^()]*\))*\)",
+    re.DOTALL,
+)
+
+
 def make_keywords_bold(string: str, keywords: list[str]) -> str:
     """Wrap all keyword occurrences in Markdown bold syntax.
 
@@ -106,7 +116,16 @@ def make_keywords_bold(string: str, keywords: list[str]) -> str:
         return string
 
     pattern = build_keyword_matcher_pattern(frozenset(keywords), word_boundary=True)
-    return pattern.sub(lambda m: f"**{m.group(0)}**", string)
+    parts: list[str] = []
+    start = 0
+    for match in protected_markdown_pattern.finditer(string):
+        parts.append(
+            pattern.sub(lambda m: f"**{m.group(0)}**", string[start : match.start()])
+        )
+        parts.append(match.group(0))
+        start = match.end()
+    parts.append(pattern.sub(lambda m: f"**{m.group(0)}**", string[start:]))
+    return "".join(parts)
 
 
 def substitute_placeholders(string: str, placeholders: dict[str, str]) -> str:

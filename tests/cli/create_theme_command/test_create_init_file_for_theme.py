@@ -24,6 +24,7 @@ class TestCreateInitFileForTheme:
         content = init_file_path.read_text(encoding="utf-8")
         assert f'theme: Literal["{theme_name}"]' in content
         assert f"{theme_name.capitalize()}Theme" in content
+        compile(content, str(init_file_path), "exec")
 
     @pytest.mark.parametrize(
         "theme_name",
@@ -33,6 +34,10 @@ class TestCreateInitFileForTheme:
             "my_theme",
             "theme!",
             "UPPERCASE",
+            "123theme",
+            "../escaped",
+            "theme\n",
+            "",
         ],
     )
     def test_raises_error_for_invalid_theme_name(self, tmp_path, theme_name):
@@ -40,3 +45,4 @@ class TestCreateInitFileForTheme:
 
         with pytest.raises(RenderCVUserError):
             create_init_file_for_theme(theme_name, init_file_path)
+        assert not init_file_path.exists()

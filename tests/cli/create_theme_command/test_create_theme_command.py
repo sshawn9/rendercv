@@ -36,3 +36,18 @@ class TestCliCommandCreateTheme:
 
         with pytest.raises(typer.Exit):
             cli_command_create_theme("Invalid-Theme")
+
+
+@pytest.mark.parametrize(
+    "theme_name", ["My Theme!", "../escaped", "123theme", "theme\n", ""]
+)
+def test_invalid_theme_name_does_not_create_any_files(
+    tmp_path, monkeypatch, theme_name
+):
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    with pytest.raises(typer.Exit):
+        cli_command_create_theme(theme_name)
+    assert list(work.iterdir()) == []
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["work"]

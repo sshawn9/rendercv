@@ -118,7 +118,9 @@ class TestMakeKeywordsBold:
 
     @settings(deadline=None)
     @given(
-        keyword=st.text(min_size=1, max_size=20).filter(lambda s: s.strip()),
+        keyword=st.text(
+            alphabet=st.characters(categories=("L", "N")), min_size=1, max_size=20
+        ),
     )
     def test_keyword_in_text_always_gets_bolded(self, keyword: str) -> None:
         text = f"before {keyword} after"
@@ -224,3 +226,34 @@ class TestBuildKeywordMatcherPattern:
         assert match is not None
         assert match.group(0) == long
         build_keyword_matcher_pattern.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("text", "keywords", "expected"),
+    [
+        ("zero **one** two", ["one"], "zero **one** two"),
+        ("**zero one two**", ["one"], "**zero one two**"),
+        ("one **one** one", ["one"], "**one** **one** **one**"),
+        ("**one** plain **one**", ["one"], "**one** plain **one**"),
+        ("__one__ one", ["one"], "__one__ **one**"),
+        ("***one*** one", ["one"], "***one*** **one**"),
+        ("**one *two* three** two", ["two"], "**one *two* three** **two**"),
+        ("Use **C++** and C++", ["C++"], "Use **C++** and **C++**"),
+        ("`one` one", ["one"], "`one` **one**"),
+        ("``one ` two`` one", ["one"], "``one ` two`` **one**"),
+        (
+            "[one](https://example.com/one)",
+            ["one"],
+            "[**one**](https://example.com/one)",
+        ),
+        (
+            "[**one**](https://example.com/one)",
+            ["one"],
+            "[**one**](https://example.com/one)",
+        ),
+        (r"\*\*one\*\*", ["one"], r"\*\***one**\*\*"),
+    ],
+)
+def test_keyword_bolding_preserves_existing_markdown(text, keywords, expected):
+    assert make_keywords_bold(text, keywords) == expected
+    assert make_keywords_bold(expected, keywords) == expected

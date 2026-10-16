@@ -310,3 +310,18 @@ def test_markdown_to_html():
     assert (
         markdown_to_html("Hello, **world**!") == "<p>Hello, <strong>world</strong>!</p>"
     )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "- Parent\n  - Child\n    - Grandchild",
+            "- Parent\n  - Child\n    - Grandchild",
+        ),
+        ("  - **Bold** and *italic*", "  - #strong[Bold] and #emph[italic]"),
+        ("  Plain text", "Plain text"),
+    ],
+)
+def test_nested_bullets_keep_indentation_without_changing_plain_text(source, expected):
+    assert markdown_to_typst(source) == expected

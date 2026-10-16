@@ -93,10 +93,22 @@ def test_rendercv_installs_and_renders_visibility_in_pyodide(
     # Feed the identical YAML to native Python and the wheel inside Pyodide.
     source = """cv:
   name: Visibility
+  phone: ["+14155552671", "+442071838750"]
+  email: ["a@example.com", "b@example.com"]
+  website: ["https://a.example.com/path/", "https://b.example.com/"]
+  custom_connections:
+    - fontawesome_icon: phone
+      placeholder: Contact
   sections:
     Work:
       entries:
         - name: Visible
+          start_date: 2021-02
+          end_date: 2022-02
+          highlights:
+            - "**Already bold**"
+            - Parent highlight
+              - Child highlight
         - name: Secret
           hidden: true
     Archived:
@@ -107,8 +119,23 @@ def test_rendercv_installs_and_renders_visibility_in_pyodide(
       - Plain text
       - text: Secret text
         hidden: true
+    Education:
+      - institution: Example University
+        area: CS
+        degree: UniqueDegree
+design:
+  theme: harvard
+  page:
+    top_margin: .5cm
+  sections:
+    show_time_spans_in: [work]
+  templates:
+    time_span: "HOW_MANY_YEARS YEARS HOW_MANY_MONTHS MONTHS"
+    normal_entry:
+      date_and_location_column: "**DATE**"
 settings:
   current_date: 2026-10-15
+  bold_keywords: [Visible, Already bold]
 """
     _, model = build_rendercv_dictionary_and_model(source)
     expected = {
@@ -116,6 +143,16 @@ settings:
         "markdown": render_full_template(model, "markdown"),
     }
     assert all("Secret" not in output for output in expected.values())
+    assert expected["typst"].count("UniqueDegree") == 1
+    assert "#strong[Visible]" in expected["typst"]
+    assert "#strong[Already bold]" in expected["typst"]
+    assert "#strong[1 year 1 month]" in expected["typst"]
+    assert "      - Child highlight" in expected["typst"]
+    assert "- Contact" in expected["markdown"]
+    assert expected["markdown"].count("- Phone:") == 2
+    assert "[a@example.com](mailto:a@example.com)" in expected["markdown"]
+    assert "[b@example.com](mailto:b@example.com)" in expected["markdown"]
+    assert "[a.example.com/path](https://a.example.com/path/)" in expected["markdown"]
     fixture = base64.b64encode(
         json.dumps({"source": source, "expected": expected}).encode()
     ).decode()
@@ -149,6 +186,8 @@ await micropip.install("emfs:/tmp/{wheel.name}")
 import base64, json
 from rendercv.schema.rendercv_model_builder import build_rendercv_dictionary_and_model
 from rendercv.renderer.templater.templater import render_full_template
+from rendercv.exception import RenderCVUserError
+assert str(RenderCVUserError(message="Example error")) == "Example error"
 case = json.loads(base64.b64decode("{fixture}"))
 _, model = build_rendercv_dictionary_and_model(case["source"])
 before = model.cv.model_dump_json()
@@ -157,6 +196,19 @@ for fmt, expected in case["expected"].items():
 assert model.cv.model_dump_json() == before
 assert model.cv.sections["Archived"].hidden is True
 assert model.cv.sections["Summary"][1].hidden is True
+
+# Standalone Typst export must work without the native Typst compiler package.
+from pathlib import Path
+from rendercv.renderer.typst import generate_typst
+photo = Path("/tmp/avatar.jpg")
+photo.write_bytes(b"photo fixture")
+export_model = model.model_copy(deep=True)
+export_model.cv.photo = photo
+export_model.settings.render_command.typst_path = Path("/tmp/standalone/cv.typ")
+typst_path = generate_typst(export_model)
+assert typst_path is not None
+assert (typst_path.parent / photo.name).read_bytes() == photo.read_bytes()
+assert model.cv.model_dump_json() == before
     `);
 }}
 

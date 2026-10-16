@@ -114,7 +114,7 @@ def parse_connections(rendercv_model: RenderCVModel) -> list[Connection]:
 
             case "website":
                 websites = rendercv_model.cv.website
-                if not websites:
+                if websites is None:
                     raise RenderCVInternalError("website key present but value is None")
                 if not isinstance(websites, list):
                     websites = [websites]

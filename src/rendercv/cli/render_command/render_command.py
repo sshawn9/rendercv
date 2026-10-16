@@ -11,7 +11,7 @@ from ..app import app
 from ..error_handler import handle_user_errors
 from .parse_override_arguments import parse_override_arguments
 from .progress_panel import ProgressPanel
-from .run_rendercv import collect_input_file_paths, run_rendercv
+from .run_rendercv import InputFilePaths, collect_input_file_paths, run_rendercv
 from .watcher import run_function_if_files_change
 
 
@@ -198,21 +198,7 @@ def cli_command_render(
 ) -> None:
     input_file_path = pathlib.Path(input_file_name).absolute()
 
-    # Resolve design/locale overlay files from YAML settings when not
-    # provided via CLI flags. collect_input_file_paths already handles
-    # parsing the YAML and resolving paths relative to the input file.
-    resolved_files = collect_input_file_paths(input_file_path, design, locale, settings)
-    if design is None and "design" in resolved_files:
-        design = resolved_files["design"]
-    if locale is None and "locale" in resolved_files:
-        locale = resolved_files["locale"]
-
     arguments: BuildRendercvModelArguments = {
-        "design_yaml_file": design.read_text(encoding="utf-8") if design else None,
-        "locale_yaml_file": locale.read_text(encoding="utf-8") if locale else None,
-        "settings_yaml_file": (
-            settings.read_text(encoding="utf-8") if settings else None
-        ),
         "output_folder": output_folder,
         "typst_path": typst_path,
         "pdf_path": pdf_path,
@@ -227,11 +213,22 @@ def cli_command_render(
         "overrides": parse_override_arguments(extra_data_model_override_arguments),
     }
 
+    def resolve_files() -> InputFilePaths:
+        return collect_input_file_paths(
+            input_file_path, design, locale, settings, arguments["overrides"]
+        )
+
     with ProgressPanel(quiet=quiet) as progress_panel:
-        if watch:
-            run_function_if_files_change(
-                list(resolved_files.values()),
-                lambda: run_rendercv(input_file_path, progress_panel, **arguments),
+
+        def render() -> None:
+            run_rendercv(
+                input_file_path,
+                progress_panel,
+                input_file_paths=resolve_files(),
+                **arguments,
             )
+
+        if watch:
+            run_function_if_files_change(lambda: list(resolve_files().values()), render)
         else:
-            run_rendercv(input_file_path, progress_panel, **arguments)
+            render()
