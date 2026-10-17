@@ -8,7 +8,11 @@ import jinja2
 from rendercv.schema.models.rendercv_model import RenderCVModel
 
 from .markdown_parser import markdown_to_html
-from .model_processor import download_photo_from_url, process_model
+from .model_processor import (
+    create_rendering_copy,
+    download_photo_from_url,
+    process_model,
+)
 from .string_processor import clean_url
 
 templates_directory = pathlib.Path(__file__).parent / "templates"
@@ -79,8 +83,8 @@ def render_full_template(
         "markdown": "md",
     }[file_type]
 
-    download_photo_from_url(rendercv_model)
     rendercv_model = process_model(rendercv_model, file_type)
+    download_photo_from_url(rendercv_model)
 
     header = render_single_template(
         file_type,
@@ -150,6 +154,7 @@ def render_html(rendercv_model: RenderCVModel, markdown: str) -> str:
     Returns:
         Complete HTML document.
     """
+    rendercv_model = create_rendering_copy(rendercv_model)
     html_body = markdown_to_html(markdown)
     return render_single_template(
         "html", "Full.html", rendercv_model, html_body=html_body

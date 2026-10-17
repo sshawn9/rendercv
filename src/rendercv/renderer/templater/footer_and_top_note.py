@@ -14,6 +14,7 @@ def render_top_note_template(
     current_date: Date,
     name: str | None,
     single_date_template: str,
+    substitute_name: bool = True,
     string_processors: list[Callable[[str], str]] | None = None,
 ) -> str:
     """Render top note by substituting placeholders and applying string processors.
@@ -41,6 +42,8 @@ def render_top_note_template(
         current_date: Date for timestamp.
         name: CV owner name for placeholder substitution.
         single_date_template: Template for date formatting.
+        substitute_name: False after hidden NAME placeholders have been removed,
+            preventing substring replacement inside unrelated text.
         string_processors: Optional processors for markdown parsing and formatting.
 
     Returns:
@@ -56,9 +59,10 @@ def render_top_note_template(
             single_date_template=single_date_template,
         ),
         "LAST_UPDATED": locale.last_updated,
-        "NAME": name or "",
         **build_date_placeholders(current_date, locale=locale),
     }
+    if substitute_name:
+        placeholders["NAME"] = name or ""
     return apply_string_processors(
         substitute_placeholders(top_note_template, placeholders), string_processors
     )
@@ -71,6 +75,7 @@ def render_footer_template(
     current_date: Date,
     name: str | None,
     single_date_template: str,
+    substitute_name: bool = True,
     string_processors: list[Callable[[str], str]] | None = None,
 ) -> str:
     """Render footer by substituting placeholders and wrapping in Typst context block.
@@ -98,6 +103,8 @@ def render_footer_template(
         current_date: Date for timestamp.
         name: CV owner name for placeholder substitution.
         single_date_template: Template for date formatting.
+        substitute_name: False after hidden NAME placeholders have been removed,
+            preventing substring replacement inside unrelated text.
         string_processors: Optional processors for markdown parsing and formatting.
 
     Returns:
@@ -112,11 +119,12 @@ def render_footer_template(
             locale=locale,
             single_date_template=single_date_template,
         ),
-        "NAME": name or "",
         "PAGE_NUMBER": "#str(here().page())",
         "TOTAL_PAGES": "#str(counter(page).final().first())",
         **build_date_placeholders(current_date, locale=locale),
     }
+    if substitute_name:
+        placeholders["NAME"] = name or ""
     return (
         "context {"
         f" [{apply_string_processors(substitute_placeholders(footer_template, placeholders), string_processors)}] }}"

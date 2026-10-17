@@ -4,6 +4,7 @@ import shutil
 from rendercv.schema.models.rendercv_model import RenderCVModel
 
 from .path_resolver import resolve_rendercv_file_path
+from .templater.model_processor import create_rendering_copy, download_photo_from_url
 from .templater.templater import render_full_template
 
 
@@ -26,6 +27,8 @@ def generate_typst(rendercv_model: RenderCVModel) -> pathlib.Path | None:
     typst_path = resolve_rendercv_file_path(
         rendercv_model, rendercv_model.settings.render_command.typst_path
     )
+    rendercv_model = create_rendering_copy(rendercv_model)
+    download_photo_from_url(rendercv_model)
     typst_contents = render_full_template(rendercv_model, "typst")
     copy_photo_next_to_typst_file(rendercv_model, typst_path)
     typst_path.write_text(typst_contents, encoding="utf-8")
@@ -46,6 +49,8 @@ def copy_photo_next_to_typst_file(
         rendercv_model: CV model containing photo path.
         typst_path: Path to Typst source file.
     """
+    if "photo" in rendercv_model.cv.hidden_fields:
+        return
     photo_path = rendercv_model.cv.photo
     if isinstance(photo_path, pathlib.Path):
         copy_to = typst_path.parent / photo_path.name

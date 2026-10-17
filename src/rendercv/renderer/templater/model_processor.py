@@ -5,20 +5,65 @@ import urllib.request
 from collections.abc import Callable
 from typing import Literal
 
+import pydantic
+
 from rendercv.exception import RenderCVUserError
+from rendercv.schema.models.cv.cv import photo_validator
 from rendercv.schema.models.cv.section import Entry, get_rendercv_sections
 from rendercv.schema.models.rendercv_model import RenderCVModel
+from rendercv.schema.models.validation_context import ValidationContext
 
 from .connections import compute_connections
 from .date import build_date_placeholders, date_object_to_string
 from .entry_templates_from_input import render_entry_templates
 from .footer_and_top_note import render_footer_template, render_top_note_template
 from .markdown_parser import markdown_to_typst
+from .name_placeholder import remove_name_placeholder
 from .string_processor import (
     apply_string_processors,
     make_keywords_bold,
     substitute_placeholders,
 )
+
+
+def create_rendering_copy(rendercv_model: RenderCVModel) -> RenderCVModel:
+    """Apply current personal-field visibility before resources or derived values."""
+    result = rendercv_model.model_copy(deep=True)
+    hidden = set(result.cv.hidden_fields)
+    for field in hidden:
+        setattr(result.cv, field, None)
+    result.cv._key_order = [key for key in result.cv._key_order if key not in hidden]
+    result.cv._rendered_sections = None
+
+    if "name" in hidden:
+        result.design.templates.footer = remove_name_placeholder(
+            result.design.templates.footer
+        )
+        result.design.templates.top_note = remove_name_placeholder(
+            result.design.templates.top_note
+        )
+        result.settings.pdf_title = remove_name_placeholder(result.settings.pdf_title)
+        if not result.design.templates.footer:
+            result.design.page.show_footer = False
+        if not result.design.templates.top_note:
+            result.design.page.show_top_note = False
+
+    # A previously hidden missing photo may have been unhidden on a live model.
+    # Reuse normal photo validation before accessing any visible photo resource.
+    if result.cv.photo is not None:
+        try:
+            result.cv.photo = photo_validator.validate_python(
+                result.cv.photo,
+                context={
+                    "context": ValidationContext(
+                        input_file_path=result._input_file_path
+                    )
+                },
+            )
+        except pydantic.ValidationError as error:
+            message = f"Invalid photo: {error}"
+            raise RenderCVUserError(message) from error
+    return result
 
 
 def download_photo_from_url(rendercv_model: RenderCVModel) -> None:
@@ -32,6 +77,8 @@ def download_photo_from_url(rendercv_model: RenderCVModel) -> None:
     Args:
         rendercv_model: CV model whose photo URL will be downloaded in-place.
     """
+    if "photo" in rendercv_model.cv.hidden_fields:
+        return
     if rendercv_model.cv.photo is None or isinstance(
         rendercv_model.cv.photo, pathlib.Path
     ):
@@ -77,7 +124,7 @@ def process_model(
     Returns:
         Processed model ready for templates.
     """
-    rendercv_model = rendercv_model.model_copy(deep=True)
+    rendercv_model = create_rendering_copy(rendercv_model)
     # The source model stays live; only this copy stores the processed view
     # shared by the entry processor and the final templates.
     rendercv_model.cv._rendered_sections = get_rendercv_sections(
@@ -90,7 +137,9 @@ def process_model(
     if file_type == "typst":
         string_processors.extend([markdown_to_typst])
 
-    rendercv_model.cv._plain_name = rendercv_model.cv.name
+    rendercv_model.cv._plain_name = (
+        "" if "name" in rendercv_model.cv.hidden_fields else rendercv_model.cv.name
+    )
     rendercv_model.cv.name = apply_string_processors(
         rendercv_model.cv.name, string_processors
     )
@@ -98,11 +147,13 @@ def process_model(
         rendercv_model.cv.headline, string_processors
     )
     rendercv_model.cv._connections = compute_connections(rendercv_model, file_type)
+    substitute_name = "name" not in rendercv_model.cv.hidden_fields
     rendercv_model.cv._top_note = render_top_note_template(
         rendercv_model.design.templates.top_note,
         locale=rendercv_model.locale,
         current_date=rendercv_model.settings._resolved_current_date,
         name=rendercv_model.cv.name,
+        substitute_name=substitute_name,
         single_date_template=rendercv_model.design.templates.single_date,
         string_processors=string_processors,
     )
@@ -112,6 +163,7 @@ def process_model(
         locale=rendercv_model.locale,
         current_date=rendercv_model.settings._resolved_current_date,
         name=rendercv_model.cv.name,
+        substitute_name=substitute_name,
         single_date_template=rendercv_model.design.templates.single_date,
         string_processors=string_processors,
     )
@@ -122,11 +174,12 @@ def process_model(
             locale=rendercv_model.locale,
             single_date_template=rendercv_model.design.templates.single_date,
         ),
-        "NAME": rendercv_model.cv._plain_name or "",
         **build_date_placeholders(
             rendercv_model.settings._resolved_current_date, locale=rendercv_model.locale
         ),
     }
+    if substitute_name:
+        pdf_title_placeholders["NAME"] = rendercv_model.cv._plain_name or ""
     rendercv_model.settings.pdf_title = substitute_placeholders(
         rendercv_model.settings.pdf_title, pdf_title_placeholders
     )

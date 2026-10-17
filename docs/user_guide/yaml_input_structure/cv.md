@@ -320,3 +320,63 @@ experience:
     highlights:
       - Built product from zero to profitability
 ```
+
+
+## Hiding personal information
+
+Use `cv.hidden_fields` to omit personal information from Typst, PDF, PNG,
+Markdown, and HTML output while keeping its original values in your YAML:
+
+```yaml
+cv:
+  name: Example Candidate
+  email:
+    - first@example.com
+    - second@example.com
+  photo: images/photo.png
+  hidden_fields:
+    - photo
+    - email
+```
+
+The allowed names are `name`, `headline`, `location`, `photo`, `email`, `phone`,
+`website`, `social_networks`, and `custom_connections`. The default is `[]`;
+omitting the field also shows everything. Unknown names, non-list values, and
+non-string list items are validation errors. Lists are hidden as a whole:
+`email` hides every email address, and `social_networks` hides every account.
+Fields retain their existing scalar/list types; no `{value, hidden}` wrapper is
+introduced. Remove a name from `hidden_fields` to show that field again.
+
+Rendering uses an independent copy. The YAML, source model, personal values,
+field order, and section/entry visibility are preserved. Ordinary hidden fields
+still undergo normal content validation, such as email and phone validation.
+An empty `hidden_fields` may be omitted during serialization; nonempty lists and
+hidden values are retained.
+
+A hidden photo keeps its path or HTTP(S) URL and still receives type/basic format
+validation. It is never checked for existence, read, downloaded, decoded, copied,
+or embedded. Missing files and unreachable URLs therefore do not prevent
+rendering while `photo` is hidden. The existing layout without a photo is used.
+Showing the photo again restores normal resource validation and rendering.
+Watch mode re-reads visibility when the CV YAML changes; hidden photo resources
+do not enter input-file discovery.
+
+Hiding `name` also removes its automatic header, footer, top-note, and PDF author
+and title contributions. Only standalone `NAME` placeholders and their directly
+adjacent separators are removed from the rendering copy. Other identifiers such
+as `MONTH_NAME` and custom text (including words like `by`) are preserved.
+Markdown formatting around remaining content stays intact: `**NAME's CV**`
+becomes `**CV**`, and `***NAME** CV*` becomes `*CV*`. Links whose labels become
+empty are removed with their destinations; links with remaining label text retain
+their URL and title. A footer or top note containing only the hidden name is
+disabled.
+Literal text elsewhere in the CV or in a custom template is not redacted.
+**Output filenames still follow the original naming rules and may contain the
+name.**
+
+For applications editing this YAML, save the complete original values and a
+`hidden_fields` array of the names above. To hide a field, add its name; to show it,
+remove its name. Do not delete the value. Render and export through a RenderCV
+version that supports this field so browser and local rendering use the same
+visibility protocol. Re-render from the complete source whenever visibility changes;
+do not reuse Markdown, HTML, or Typst output generated with different visibility.

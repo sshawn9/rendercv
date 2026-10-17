@@ -278,6 +278,25 @@
     "Cv": {
       "additionalProperties": false,
       "properties": {
+        "hidden_fields": {
+          "default": [],
+          "description": "Personal information fields omitted from every output. Values remain in the source model. Lists are hidden as a whole. Hidden photos keep type/format validation but skip resource checks and access.",
+          "examples": [
+            [
+              "photo"
+            ],
+            [
+              "name",
+              "email",
+              "phone"
+            ]
+          ],
+          "items": {
+            "$ref": "#/$defs/HiddenField"
+          },
+          "title": "Hidden Fields",
+          "type": "array"
+        },
         "name": {
           "anyOf": [
             {
@@ -1542,6 +1561,20 @@
       },
       "title": "HebrewLocale",
       "type": "object"
+    },
+    "HiddenField": {
+      "enum": [
+        "name",
+        "headline",
+        "location",
+        "photo",
+        "email",
+        "phone",
+        "website",
+        "social_networks",
+        "custom_connections"
+      ],
+      "type": "string"
     },
     "HindiLocale": {
       "additionalProperties": false,

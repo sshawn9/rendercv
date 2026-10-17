@@ -153,8 +153,46 @@ settings:
     assert "[a@example.com](mailto:a@example.com)" in expected["markdown"]
     assert "[b@example.com](mailto:b@example.com)" in expected["markdown"]
     assert "[a.example.com/path](https://a.example.com/path/)" in expected["markdown"]
+    hidden_data, _ = build_rendercv_dictionary_and_model(source)
+    hidden_data["cv"].update(
+        name="Example Candidate",
+        phone=["+12025550123", "+12025550124"],
+        photo="https://example.invalid/unavailable.png",
+        hidden_fields=[
+            "name",
+            "photo",
+            "phone",
+            "email",
+            "website",
+            "custom_connections",
+        ],
+    )
+    hidden_data["design"]["templates"].update(
+        footer="***NAME** CV* | [NAME](https://example.com/hidden-profile) | PAGE_NUMBER",
+        top_note="[NAME's CV](https://example.com/cv) -- ___MONTH_NAME, YEAR___",
+    )
+    hidden_data["design"]["page"].update(show_footer=True, show_top_note=True)
+    hidden_source = json.dumps(hidden_data)
+    _, hidden_model = build_rendercv_dictionary_and_model(hidden_source)
+    hidden_before = hidden_model.model_dump_json()
+    hidden_expected = {
+        "typst": render_full_template(hidden_model, "typst"),
+        "markdown": render_full_template(hidden_model, "markdown"),
+    }
+    assert "#emph[CV]" in hidden_expected["typst"]
+    assert '#link("https://example.com/cv")[CV]' in hidden_expected["typst"]
+    assert "hidden-profile" not in hidden_expected["typst"]
+    assert "#strong[#emph[October, 2026]]" in hidden_expected["typst"]
+    assert hidden_model.model_dump_json() == hidden_before
     fixture = base64.b64encode(
-        json.dumps({"source": source, "expected": expected}).encode()
+        json.dumps(
+            {
+                "source": source,
+                "expected": expected,
+                "hidden_source": hidden_source,
+                "hidden_expected": hidden_expected,
+            }
+        ).encode()
     ).decode()
 
     script = tmp_path / "test.mjs"
@@ -196,6 +234,22 @@ for fmt, expected in case["expected"].items():
 assert model.cv.model_dump_json() == before
 assert model.cv.sections["Archived"].hidden is True
 assert model.cv.sections["Summary"][1].hidden is True
+
+# Personal-field visibility uses the same YAML protocol in native Python and WASM.
+from unittest.mock import patch
+for photo_value in ["https://example.invalid/unavailable.png", "images/missing.png"]:
+    hidden_input = json.loads(case["hidden_source"])
+    hidden_input["cv"]["photo"] = photo_value
+    _, hidden_model = build_rendercv_dictionary_and_model(json.dumps(hidden_input))
+    hidden_before = hidden_model.model_dump_json()
+    with patch("urllib.request.urlopen", side_effect=AssertionError("Hidden photo accessed")):
+        for fmt, expected in case["hidden_expected"].items():
+            assert render_full_template(hidden_model, fmt) == expected, fmt
+        hidden_model.cv.hidden_fields.remove("name")
+        assert "Example Candidate" in render_full_template(hidden_model, "typst")
+        hidden_model.cv.hidden_fields.insert(0, "name")
+        assert render_full_template(hidden_model, "typst") == case["hidden_expected"]["typst"]
+    assert hidden_model.model_dump_json() == hidden_before
 
 # Standalone Typst export must work without the native Typst compiler package.
 from pathlib import Path

@@ -1,4 +1,5 @@
-from typing import Any, Self
+import pathlib
+from typing import Annotated, Any, Literal, Self
 
 import pydantic
 import pydantic_extra_types.phone_numbers as pydantic_phone_numbers
@@ -6,7 +7,7 @@ import pydantic_extra_types.phone_numbers as pydantic_phone_numbers
 from rendercv.exception import RenderCVInternalError
 
 from ..base import BaseModelWithoutExtraKeys
-from ..path import ExistingPathRelativeToInput
+from ..path import ExistingPathRelativeToInput, resolve_relative_path
 from .custom_connection import CustomConnection
 from .section import BaseRenderCVSection, Section, get_rendercv_sections
 from .social_network import SocialNetwork
@@ -27,7 +28,40 @@ phones_validator = pydantic.TypeAdapter[list[pydantic_phone_numbers.PhoneNumber]
 )
 
 
+type HiddenField = Literal[
+    "name",
+    "headline",
+    "location",
+    "photo",
+    "email",
+    "phone",
+    "website",
+    "social_networks",
+    "custom_connections",
+]
+
+photo_validator = pydantic.TypeAdapter(
+    Annotated[
+        ExistingPathRelativeToInput | pydantic.HttpUrl | None,
+        pydantic.Field(union_mode="left_to_right"),
+    ]
+)
+photo_path_validator = pydantic.TypeAdapter(pathlib.Path)
+
+
 class Cv(BaseModelWithoutExtraKeys):
+    # Validate before photo regardless of the order used in the input YAML.
+    hidden_fields: list[HiddenField] = pydantic.Field(
+        default=[],
+        strict=True,
+        exclude_if=lambda value: not value,
+        description=(
+            "Personal information fields omitted from every output. Values remain"
+            " in the source model. Lists are hidden as a whole. Hidden photos keep"
+            " type/format validation but skip resource checks and access."
+        ),
+        examples=[["photo"], ["name", "email", "phone"]],
+    )
     name: str | None = pydantic.Field(
         default=None,
         examples=["John Doe", "Jane Smith"],
@@ -172,6 +206,31 @@ class Cv(BaseModelWithoutExtraKeys):
         instance._key_order = [key for key in key_order if data.get(key) is not None]  # ty: ignore[invalid-assignment]
 
         return instance
+
+    @pydantic.field_validator("photo", mode="wrap")
+    @classmethod
+    def validate_photo_visibility(
+        cls,
+        value: Any,
+        handler: pydantic.ValidatorFunctionWrapHandler,
+        info: pydantic.ValidationInfo,
+    ) -> pathlib.Path | pydantic.HttpUrl | None:
+        """Retain hidden photo values without touching their resources."""
+        if "photo" not in info.data.get("hidden_fields", []):
+            return handler(value)
+        if value is None:
+            return None
+        if isinstance(value, pydantic.HttpUrl) or (
+            isinstance(value, str)
+            and ("://" in value or value.lower().startswith(("http:", "https:")))
+        ):
+            return website_validator.validate_python(value)
+        if isinstance(value, str) and (not value.strip() or "\0" in value):
+            raise ValueError("A photo path must be nonempty and contain no null bytes.")
+        path = photo_path_validator.validate_python(value)
+        if "\0" in str(path):
+            raise ValueError("A photo path must contain no null bytes.")
+        return resolve_relative_path(path, info, must_exist=False)
 
     @pydantic.field_validator("website", "email", "phone", mode="plain")
     @classmethod

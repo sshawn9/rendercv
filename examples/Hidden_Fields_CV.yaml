@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../schema.json
+cv:
+  name: Example Candidate
+  headline: Example Role
+  email:
+    - first@example.com
+    - second@example.com
+  photo: images/photo.png
+  hidden_fields:
+    - photo
+    - email
+  sections:
+    summary:
+      - This fictional example keeps the photo and email values in the source.
+      - Remove a field from hidden_fields to show it again.
